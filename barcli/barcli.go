@@ -3,6 +3,7 @@ package barcli
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/0xC3/progress"
 	"github.com/mewkiz/pkg/errutil"
@@ -14,6 +15,7 @@ type Bar struct {
 	hasRun   bool
 	barCount int
 	percent  int
+	times    []time.Time
 }
 
 // New returns a new Bar object initialized from the given parameters and prints
@@ -47,6 +49,7 @@ func (bar *Bar) IncN(add int) (err error) {
 
 // Inc increases the Cur value of bar by one and prints the bar.
 func (bar *Bar) Inc() (err error) {
+	bar.times = append(bar.times, time.Now())
 	err = bar.backend.Inc()
 	if err != nil {
 		return errutil.Err(err)
@@ -57,38 +60,44 @@ func (bar *Bar) Inc() (err error) {
 // Print prints the current progress bar.
 //
 // Note: the terminal has to be at least 14 characters in width.
-func (bar *Bar) StringSize(col int) (filled string, unfilled string, err error) {
-	const prettyFmt = "%s"
+func (bar *Bar) Print() (err error) {
+	const prettyFmt = "[%s] %3d%% done (%.0f/%s)"
 
 	//    '%s' -> ''  = -2
 	//    '%%' -> '%' = -1
-	const prettySize = len(prettyFmt) - 3
-	barSize := col - prettySize
+	const prettySize = len(prettyFmt) + 4
+	ws := getWinSize()
+	barSize := int(ws.Col) - prettySize
 	if barSize < 2 {
-		return "", "", errutil.NewNoPosf("terminal too small (%d) to display progressbar.", col)
+		return fmt.Errorf("terminal too small (%d) to display progressbar.", ws.Col)
 	}
 	part := bar.backend.Progress()
 	barCount := int(part * float64(barSize))
 	percent := int(part * 100)
 	if bar.hasRun == true && barCount == bar.barCount && percent == bar.percent {
-		return "", "", nil
+		return
 	}
 	bar.hasRun = true
 	bar.barCount = barCount
 	bar.percent = percent
-	filledBuf := []byte{}
-	unfilledBuf := []byte{}
+	slots := make([]byte, barSize)
 	for i := 0; i < barSize; i++ {
 		if i < barCount {
-			filledBuf = append(filledBuf, byte('='))
+			slots[i] = byte('=')
 		} else {
-			unfilledBuf = append(unfilledBuf, byte('-'))
+			slots[i] = byte(' ')
 		}
 	}
-	filled += fmt.Sprintf(prettyFmt, string(filledBuf))
-	if percent == 100 {
-		filled += fmt.Sprintln()
+	fmt.Printf("\r")
+	var avgDur float64
+	if len(bar.times) > 1 {
+		avgDur = bar.times[len(bar.times)-1].Sub(bar.times[0]).Seconds()
 	}
-	unfilled += string(unfilledBuf)
-	return filled, unfilled, nil
+	total := time.Duration(avgDur*(1/(float64(bar.backend.Cur)/float64(bar.backend.Max)))) * time.Second
+
+	fmt.Printf(prettyFmt, string(slots), percent, avgDur, total)
+	if percent == 100 {
+		fmt.Println()
+	}
+	return nil
 }
