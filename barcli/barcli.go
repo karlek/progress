@@ -3,10 +3,10 @@ package barcli
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/0xC3/progress"
-	"github.com/mewkiz/pkg/errutil"
 )
 
 // Bar represents a cli frontend of a progress.Bar object.
@@ -15,7 +15,7 @@ type Bar struct {
 	hasRun   bool
 	barCount int
 	percent  int
-	times    []time.Time
+	begin    time.Time
 }
 
 // New returns a new Bar object initialized from the given parameters and prints
@@ -24,8 +24,9 @@ func New(max int) (bar *Bar, err error) {
 	bar = new(Bar)
 	bar.backend, err = progress.New(max)
 	if err != nil {
-		return nil, errutil.Err(err)
+		return nil, err
 	}
+	bar.begin = time.Now()
 	return bar, nil
 }
 
@@ -33,7 +34,7 @@ func New(max int) (bar *Bar, err error) {
 func (bar *Bar) IncMax(add int) (err error) {
 	err = bar.backend.IncMax(add)
 	if err != nil {
-		return errutil.Err(err)
+		return err
 	}
 	return nil
 }
@@ -42,30 +43,37 @@ func (bar *Bar) IncMax(add int) (err error) {
 func (bar *Bar) IncN(add int) (err error) {
 	err = bar.backend.IncN(add)
 	if err != nil {
-		return errutil.Err(err)
+		return err
 	}
 	return nil
 }
 
 // Inc increases the Cur value of bar by one and prints the bar.
 func (bar *Bar) Inc() (err error) {
-	bar.times = append(bar.times, time.Now())
 	err = bar.backend.Inc()
 	if err != nil {
-		return errutil.Err(err)
+		return err
 	}
 	return nil
+}
+
+func (bar *Bar) SetMax() {
+	bar.backend.Cur = bar.backend.Max
+}
+
+func (bar *Bar) Done() bool {
+	return bar.backend.Cur == bar.backend.Max
 }
 
 // Print prints the current progress bar.
 //
 // Note: the terminal has to be at least 14 characters in width.
 func (bar *Bar) Print() (err error) {
-	const prettyFmt = "[%s] %3d%% done (%.0f/%s)"
+	const prettyFmt = "[%s] %3d%% done (%s/%s)"
 
 	//    '%s' -> ''  = -2
 	//    '%%' -> '%' = -1
-	const prettySize = len(prettyFmt) + 4
+	const prettySize = len(prettyFmt) + 9
 	ws := getWinSize()
 	barSize := int(ws.Col) - prettySize
 	if barSize < 2 {
@@ -89,15 +97,12 @@ func (bar *Bar) Print() (err error) {
 		}
 	}
 	fmt.Printf("\r")
-	var avgDur float64
-	if len(bar.times) > 1 {
-		avgDur = bar.times[len(bar.times)-1].Sub(bar.times[0]).Seconds()
-	}
+	avgDur := time.Now().Sub(bar.begin).Seconds()
 	total := time.Duration(avgDur*(1/(float64(bar.backend.Cur)/float64(bar.backend.Max)))) * time.Second
 
-	fmt.Printf(prettyFmt, string(slots), percent, avgDur, total)
+	fmt.Fprintf(os.Stderr, prettyFmt, string(slots), percent, time.Second*time.Duration(avgDur), total)
 	if percent == 100 {
-		fmt.Println()
+		fmt.Fprintln(os.Stderr)
 	}
 	return nil
 }
