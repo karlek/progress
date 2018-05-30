@@ -6,7 +6,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/0xC3/progress"
+	"github.com/karlek/progress"
+	"github.com/pkg/errors"
+	terminal "github.com/wayneashleyberry/terminal-dimensions"
 )
 
 // Bar represents a cli frontend of a progress.Bar object.
@@ -74,10 +76,13 @@ func (bar *Bar) Print() (err error) {
 	//    '%s' -> ''  = -2
 	//    '%%' -> '%' = -1
 	const prettySize = len(prettyFmt) + 9
-	ws := getWinSize()
-	barSize := int(ws.Col) - prettySize
+	width, err := terminal.Width()
+	if err != nil {
+		return errors.WithStack(err)
+	}
+	barSize := int(width) - prettySize
 	if barSize < 2 {
-		return fmt.Errorf("terminal too small (%d) to display progressbar.", ws.Col)
+		return fmt.Errorf("terminal too small (%d) to display progressbar", width)
 	}
 	part := bar.backend.Progress()
 	barCount := int(part * float64(barSize))
